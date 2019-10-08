@@ -191,3 +191,39 @@ FROM (
     END,
     nation ASC
 );
+
+SELECT hasc,
+    CASE WHEN COUNT(CASE WHEN iso = 'ned' THEN 1 END) = 1 THEN 1 ELSE 0 END AS nederlands,
+    CASE WHEN COUNT(CASE WHEN iso = 'fra' THEN 1 END) = 1 THEN 1 ELSE 0 END AS frans,
+    CASE WHEN COUNT(CASE WHEN iso = 'dui' THEN 1 END) = 1 THEN 1 ELSE 0 END AS duits,
+    CASE WHEN COUNT(1) = 3 THEN 'x' ELSE ' ' END AS aa    
+FROM taalgebruik
+WHERE iso IN ('dui', 'fra', 'ned')
+GROUP BY hasc;
+
+SELECT hasc
+FROM taalgebruik
+WHERE iso IN ('eng', 'fra', 'spa')
+GROUP BY hasc
+HAVING 
+    COUNT(CASE WHEN iso = 'eng' THEN 1 END) >= 1
+    AND COUNT(CASE WHEN iso= 'fra' THEN 1 END) >= 1
+    AND COUNT (CASE WHEN iso = 'dui' THEN 1 END) >= 1;
+    
+SELECT CASE 
+            WHEN iso = 'ned' THEN 'nederlands'
+            WHEN iso = 'fra' THEN 'frans'
+            WHEN iso = 'dui' THEN 'duits'
+        END AS taal, 
+        count(1) as aantal
+FROM taalgebruik
+WHERE iso IN ('ned', 'fra', 'dui')
+GROUP BY iso
+ORDER BY 
+    CASE 
+        WHEN taal = 'nederlands' THEN 1
+        WHEN taal = 'frans' THEN 2
+        WHEN taal = 'duits' THEN 3
+        ELSE 4
+    END;
+    
