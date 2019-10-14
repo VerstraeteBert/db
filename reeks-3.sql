@@ -37,8 +37,8 @@ ORDER BY resort;
   en markeer vervolgens deze taal welke het kleinste maximale gebruik vertoont.
  */
 SELECT iso,
-        MAX(gebruik),
-        SUM
+       ROUND(MAX(gebruik) * 100, 2),
+       CASE WHEN MAX(gebruik) = MIN(MAX(gebruik)) OVER ( )  THEN 'min' ELSE '' END as min
 FROM taalgebruik
 WHERE HASC IN ('BE', 'DE')
 GROUP BY iso
