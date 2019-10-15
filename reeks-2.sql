@@ -227,3 +227,134 @@ ORDER BY
         ELSE 4
     END;
     
+/**
+  Toon de taal iso en de som van het gebruik uit de tabel Taalgebruik voor hasc='BE','FR' of 'NL'.
+ */
+SELECT hasc, iso, ROUND(SUM(gebruik), 4)
+FROM taalgebruik
+WHERE hasc IN ('BE', 'FR', 'NL')
+GROUP BY ROLLUP(hasc, iso)
+HAVING GROUPING(hasc) + GROUPING(iso) != 2;
+
+/**
+  Bepaal uit de tabel Cities voor iso='DE of iso='FR' het aantal records per iso en lev1. Verzorg de uitvoer !
+  DE Bayern                                   21763
+DE Berlin                                     148
+DE Bremen                                      70
+DE Hessen                                    3242
+DE Hamburg                                    211
+DE Sachsen                                   2214
+...
+   totaal land  DE                          65233
+FR Corse                                      798
+FR Alsace                                    1002
+FR Centre                                    4423
+FR Auvergne                                  3775
+...
+FR Provence-Alpes-Côte d'Azur                2291
+   totaal land  FR                          57884
+   **totaal**                              123117
+ */
+SELECT
+     CASE WHEN grouping(lev1) = 0 THEN iso ELSE '' END AS iso,
+     CASE grouping_id(iso) + grouping_id(lev1)
+            WHEN 3 THEN '**totaal**'
+            WHEN 1 THEN 'totaal land ' || iso
+            ELSE lev1
+     END AS lev1,
+     count(1) as totaal
+FROM cities
+WHERE iso IN ('DE', 'FR') AND lev1 IS NOT NULL
+GROUP BY ROLLUP(iso, lev1);
+
+/**
+  Toon met één enkele query uit de tabel Taalgebruik zowel die landen (hasc) waar men minstens 10 talen (iso) spreekt,
+  als die talen die in minstens tien landen gesproken worden.
+  Beperk je hierbij tot talen waarvan het relatieve gebruik minstens 2% is.
+   ---------------------------------
+         in UG spreekt men 12 talen
+         in TZ spreekt men 12 talen
+         in TG spreekt men 12 talen
+         . . .
+         eng wordt gesproken in 48 landen
+         ara wordt gesproken in 25 landen
+         spa wordt gesproken in 25 landen
+         . . .
+ */
+SELECT
+    CASE GROUPING_ID(hasc) * 2  + GROUPING_ID(ISO)
+        WHEN 2 THEN iso || ' wordt in ' || count(1) || ' landen gesproken'
+        WHEN 1 THEN 'In ' || hasc || ' spreekt men ' || count(1) || ' talen'
+    END
+FROM Taalgebruik
+WHERE gebruik > 0.02 AND hasc IS NOT NULL
+GROUP BY cube(hasc,iso)
+HAVING count(1) > 10 AND (GROUPING_ID(hasc) + GROUPING_ID(iso) != 2)
+ORDER BY GROUPING_ID(hasc), count(1) DESC
+
+/**
+  Volgende SQL query produceert een lijst van alle Belgische gemeenten, met hun orientatie t.o.v. Brussel en hun elevation (hoogteligging).
+
+  Men kan een gemeente classificeren volgens het criterium orientatie t.o.v. Brussel. Een gemeente ligt:
+    ten noorden van Brussel indien ligging<45 of ligging>315
+    ten oosten van Brussel indien 45<ligging<135
+    ten zuiden van Brussel indien 135<ligging<225
+    ten westen van Brussel indien 225<ligging<315
+
+  in laag-Belgie indien elevation<50
+in midden-Belgie indien 50<=elevation<200
+in hoog-Belgie indien elevation>=200
+
+Ontwikkel STAPSGEWIJS een query die een tweedimensionale overzichtstabel produceert van het aantal gemeenten in de diverse categorieën en hun combinaties. Je moet bijgevolg volgend resultaat bekomen:
+              LAAG   MIDDEN     HOOG
+     -----  ------   ------   ------   ------
+     noord      92        1        0       93
+     oost       53      106       59      218
+     west      127       22        0      149
+     zuid        8       69       52      129
+               280      198      111      589
+ */
+SELECT
+    CASE
+        WHEN richting(50.830, 4.330, latitude, longitude) < 45 OR richting(50.830, 4.330, latitude, longitude) >= 315 THEN 'noorden'
+        WHEN richting(50.830, 4.330, latitude, longitude) BETWEEN 45 AND 134.999 THEN 'oosten'
+        WHEN richting(50.830, 4.330, latitude, longitude) BETWEEN 135 AND 224.999 THEN 'zuiden'
+        WHEN richting(50.830, 4.330, latitude, longitude) BETWEEN 225 AND 314.999 THEN 'westen'
+    END,
+    SUM(CASE WHEN elevation < 50 THEN 1 ELSE 0 END) as laag,
+    SUM(CASE WHEN elevation BETWEEN 50 AND 199.999 THEN 1 ELSE 0 END) as midden,
+    SUM(CASE WHEN elevation >= 200 THEN 1 ELSE 0 END) as hoog,
+    count(*)
+FROM regios
+WHERE parent like 'BE.__.__'
+GROUP BY
+    ROLLUP(CASE
+        WHEN richting(50.830, 4.330, latitude, longitude) < 45 OR richting(50.830, 4.330, latitude, longitude) >= 315 THEN 'noorden'
+        WHEN richting(50.830, 4.330, latitude, longitude) BETWEEN 45 AND 134.999 THEN 'oosten'
+        WHEN richting(50.830, 4.330, latitude, longitude) BETWEEN 135 AND 224.999 THEN 'zuiden'
+        WHEN richting(50.830, 4.330, latitude, longitude) BETWEEN 225 AND 314.999 THEN 'westen'
+    END);
+
+/*
+ Ontwikkel STAPSGEWIJS één enkele query die uit de Ranking tabel een tweedimensionale overzichtstabel produceert
+ (voor elk seizoen een rij en voor elke discipline een kolom) van het aantal skiërs of skiesters
+ die tijdens een specifiek seizoen in een specifieke discipline punten behaald hebben.
+ Produceer eveneens een afsluitende rij, die de overeenkomstige gegevens genereert, samengevat over alle seizoenen heen.
+ Voeg vervolgens drie kolommen toe die de aantallen per rij sommeert:
+    één waarbij enkel met skiërs wordt rekening gehouden,
+    één enkel met skiesters, en één waarbij geen onderscheid gemaakt wordt tussen beiden. Voeg tenslotte een kolom toe met de over de disciplines uitgemiddelde aantallen, hierbij enkel rekening houdend met effectief ingerichte disciplines. Je moet bijgevolg volgend resultaat bekomen:
+ */
+SELECT CASE WHEN GROUPING(season) = 1 THEN 'Total' ELSE 'Season ' || season END AS result,
+       SUM(CASE WHEN discipline = 'DH' THEN 1 ELSE 0 END) as dh,
+       SUM(CASE WHEN discipline = 'SG' THEN 1 ELSE 0 END) as sg,
+       SUM(CASE WHEN discipline = 'GS' THEN 1 ELSE 0 END) as gs,
+       SUM(CASE WHEN discipline = 'SL' THEN 1 ELSE 0 END) as sl,
+       SUM(CASE WHEN discipline = 'KB' THEN 1 ELSE 0 END) as kb,
+       SUM(CASE WHEN gender = 'M' THEN 1 ELSE 0 END) AS M,
+       SUM(CASE WHEN gender = 'L' THEN 1 ELSE 0 END) AS L,
+       COUNT(1) AS totaal,
+       ROUND(count(1) / COUNT(DISTINCT discipline), 2) AS gemperdisc
+FROM ranking
+WHERE season <= 2016
+GROUP BY ROLLUP(season)
+ORDER BY season
