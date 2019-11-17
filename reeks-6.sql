@@ -442,3 +442,58 @@ FROM x
 WHERE rang <= 3
 GROUP BY gender, discipline, rang, name
 ORDER BY gender, discipline, rang;
+                     
+WITH x AS (
+    SELECT distinct iso
+    FROM cities
+    join members on iso=hasc and afkorting='EU'
+    WHERE elevation >= 500
+), y AS (
+    SELECT 'Laaggebergte' hoogtegroep FROM DUAL
+    UNION ALL
+    SELECT 'Middelgebergte' hoogtegroep FROM DUAL
+        UNION ALL
+    SELECT 'Hooggebergte' hoogtegroep FROM DUAL
+), xy AS (
+   SELECT iso, hoogtegroep
+    FROM x,y
+), Z AS (
+    SELECT   iso, case when elevation between 500 and  749 then 'Laaggebergte'
+                   when elevation between 750 and 1499 then 'Middelgebergte'
+                   when elevation     >= 1500          then 'Hooggebergte'
+              end  hoogtegroep
+        ,COUNT(1) aantal
+FROM     cities join members on iso=hasc and afkorting='EU'
+WHERE    elevation >= 500
+GROUP BY iso, case when elevation between 500 and  749 then 'Laaggebergte'
+                   when elevation between 750 and 1499 then 'Middelgebergte'
+                   when elevation     >= 1500          then 'Hooggebergte'
+              end
+
+), zxy AS (
+    SELECT
+        xy.iso,
+        xy.hoogtegroep,
+        coalesce(z.aantal, 0) as aantal
+    FROM xy
+    LEFT JOIN z ON xy.iso = z.iso AND xy.hoogtegroep = z.hoogtegroep
+), fin AS (
+    SELECT name,
+       hoogtegroep,
+       zxy.aantal,
+       row_number() over (PARTITION BY hoogtegroep ORDER BY zxy.aantal DESC, name) as rang
+    FROM zxy
+    JOIN regios r ON r.HASC = zxy.iso
+    GROUP BY name, hoogtegroep, zxy.aantal
+)
+SELECT
+    MAX(CASE WHEN hoogtegroep = 'Laaggebergte' THEN name END) || '('
+        || TO_CHAR(MAX(CASE WHEN hoogtegroep = 'Laaggebergte' THEN aantal END)) || ')' AS "Laaggebergte",
+    MAX(CASE WHEN hoogtegroep = 'Middelgebergte' THEN name END) || '('
+        || TO_CHAR(MAX(CASE WHEN hoogtegroep = 'Middelgebergte' THEN aantal END)) || ')' AS "Middelgebergte",
+    MAX(CASE WHEN hoogtegroep = 'Hooggebergte' THEN name END) || '('
+        || TO_CHAR(MAX(CASE WHEN hoogtegroep = 'Hooggebergte' THEN aantal END)) || ')' AS "Hooggebergte"
+FROM fin
+GROUP BY rang
+ORDER BY rang
+                       
