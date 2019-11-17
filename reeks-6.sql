@@ -442,7 +442,10 @@ FROM x
 WHERE rang <= 3
 GROUP BY gender, discipline, rang, name
 ORDER BY gender, discipline, rang;
-                     
+
+/**
+  15
+*/
 WITH x AS (
     SELECT distinct iso
     FROM cities
@@ -469,7 +472,6 @@ GROUP BY iso, case when elevation between 500 and  749 then 'Laaggebergte'
                    when elevation between 750 and 1499 then 'Middelgebergte'
                    when elevation     >= 1500          then 'Hooggebergte'
               end
-
 ), zxy AS (
     SELECT
         xy.iso,
@@ -495,5 +497,4 @@ SELECT
         || TO_CHAR(MAX(CASE WHEN hoogtegroep = 'Hooggebergte' THEN aantal END)) || ')' AS "Hooggebergte"
 FROM fin
 GROUP BY rang
-ORDER BY rang
-                       
+ORDER BY rang                     
