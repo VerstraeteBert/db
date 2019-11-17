@@ -13,7 +13,6 @@ SELECT   jaar, TO_CHAR(TO_TIMESTAMP('01-04' || CAST(jaar AS CHAR(4)), 'DD-MM-RRR
 FROM     s
 ORDER BY jaar;
 
-
 /**
   2
  */
