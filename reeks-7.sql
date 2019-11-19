@@ -199,22 +199,22 @@ ORDER BY hasc1, length DESC;
   7
  */
 WITH x AS (
-    SELECT
-       (SELECT name FROM regios c WHERE c.hasc = (SELECT parent FROM regios l WHERE l.hasc = t.HASC)) AS continent,
-       iso,
-       CAST(gebruik *
-            COALESCE((SELECT population FROM regios r WHERE r.HASC = t.hasc), 0)
-            AS INT)
-        AS sprekers
+   SELECT
+          iso,
+          (SELECT parent FROM regios WHERE regios.hasc = t.hasc) AS continent,
+           CAST(gebruik * COALESCE((SELECT population FROM regios r WHERE r.hasc = t.hasc), 0) AS INT) AS aantal
     FROM taalgebruik t
+), y AS (
+    SELECT continent, iso, SUM(aantal) AS aantal
+    FROM x
+    GROUP BY continent, iso
 )
-SELECT continent,
-       (SELECT taal FROM talen c WHERE c.ISO = x.ISO) AS taal,
-       SUM(sprekers) as aant
-FROM x
-GROUP BY continent, iso
-HAVING SUM(sprekers) > 9999999
-ORDER BY continent, aant DESC;
+SELECT
+    (SELECT taal FROM talen WHERE talen.ISO = y.iso) AS taal,
+    continent,
+    aantal
+FROM y
+WHERE aantal > 9999999
 
 /**
   8
