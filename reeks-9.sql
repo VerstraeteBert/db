@@ -168,7 +168,6 @@ SELECT *
 FROM z
 ORDER BY hasc, name;
 
-
 /**
   7
  */
@@ -235,3 +234,154 @@ WITH x (hasc, name, niveau, "LEVEL", blad) AS (
 SELECT *
 FROM x
 ORDER BY "LEVEL", name;
+
+/**
+  10
+ */
+ -- oracle
+SELECT LPAD('.',40*(LEVEL-1),'.')||NAME||'('||HASC||')' AS iets
+FROM regios r1
+START WITH parent = 'BE.OV'
+CONNECT BY prior hasc  = parent AND prior name != name
+ORDER SIBLINGS BY name DESC;
+
+-- ANSI
+WITH x (hasc, name, iets, "LEVEL", root) AS (
+    SELECT HASC, NAME, NAME ||'('|| HASC ||')' AS iets, 1 AS "LEVEL", hasc AS root
+    FROM regios r1
+    WHERE PARENT = 'BE.OV'
+        UNION ALL
+    SELECT r2.HASC, r2.NAME, LPAD('.',40*("LEVEL"),'.')||r2.NAME||'('||r2.HASC||')', "LEVEL" + 1, root
+    FROM regios r2
+    JOIN x ON x.HASC = r2.PARENT AND x.name != r2.name
+)
+SELECT iets
+FROM x
+ORDER BY root DESC, "LEVEL", name DESC;
+
+/**
+  11
+ */
+SELECT name, ltrim(sys_connect_by_path(name,';'),';') AS OUDERS, level,
+       CONNECT_BY_ROOT name AS "= BELGIË ?"
+FROM regios r1
+WHERE CONNECT_BY_ISLEAF = 1
+START WITH hasc = 'BE'
+CONNECT BY prior hasc = parent
+ORDER BY level, name;
+
+-- ANSI
+WITH x (name, hasc, ouders, "LEVEL", rootname, blad) AS (
+    SELECT name, hasc, name AS ouders, 1 "LEVEL", name AS rootname, 0 AS blad
+    FROM regios r1
+    WHERE hasc = 'BE'
+        UNION ALL
+    SELECT r2.name, r2.hasc, x.ouders || '/' || r2.name, "LEVEL" + 1, rootname,
+           CASE WHEN (SELECT count(1) FROM regios r3 WHERE r3.PARENT = r2.HASC) >= 1 THEN 0 ELSE 1 END
+    FROM regios r2
+    JOIN x ON x.hasc = r2.parent
+)
+SELECT name, ouders, "LEVEL", rootname
+FROM x
+WHERE blad = 1
+ORDER BY "LEVEL", name;
+
+/**
+  12
+ */
+SELECT LPAD('.',40*(LEVEL-1),'.')||NAME||'('||HASC||')' AS iets,
+    CONNECT_BY_ISCYCLE
+FROM regios r1
+START WITH parent = 'BE.OV'
+CONNECT BY NOCYCLE PRIOR hasc  = parent AND PRIOR name != name
+ORDER SIBLINGS BY name DESC;
+
+/**
+  13
+ */
+ drop table tab1;
+CREATE TABLE tab1 (
+  id        NUMBER,
+  parent_id NUMBER,
+  CONSTRAINT tab1_pk PRIMARY KEY (id),
+  CONSTRAINT tab1_tab1_fk FOREIGN KEY (parent_id) REFERENCES tab1(id)
+);
+INSERT INTO tab1 VALUES (1, NULL);
+INSERT INTO tab1 VALUES (2, 1);
+INSERT INTO tab1 VALUES (3, 2);
+INSERT INTO tab1 VALUES (4, 3);
+INSERT INTO tab1 VALUES (5, 4);
+
+UPDATE tab1 SET parent_id = 5 WHERE id = 1;
+
+select id,Parent_id,level,connect_by_isleaf,connect_by_root id,SYS_CONNECT_BY_PATH(id, '/') as path,connect_by_iscycle
+from tab1
+start with id=5
+connect by nocycle prior parent_id= id
+order by level;
+
+/**
+  14
+ */
+WITH x AS (
+    SELECT hasc,
+           population,
+           elevation,
+           prior elevation AS priorelevation
+    FROM regios r1
+    WHERE CONNECT_BY_ISLEAF = 1
+    START WITH hasc = 'EUR'
+    CONNECT BY PRIOR hasc = parent
+)
+SELECT (SELECT name FROM regios WHERE hasc = SUBSTR(x.HASC, 0, 2)) AS name,
+       SUM(POPULATION) AS population,
+       COUNT(1),
+       MAX(ELEVATION),
+       MAX(priorelevation)
+FROM x
+WHERE population IS NOT NULL
+GROUP BY SUBSTR(x.HASC, 0, 2)
+ORDER BY population DESC;
+
+/**
+  15
+ */
+WITH x (name, niveau, blad, population, area, parent, hasc) AS (
+    SELECT
+       name,
+       level - 1 AS niveau,
+       CONNECT_BY_ISLEAF blad,
+       population,
+       area,
+       parent,
+       hasc
+    FROM regios r1
+    START WITH hasc = 'BE'
+    CONNECT BY PRIOR hasc = parent
+    ORDER BY level
+)
+SELECT
+    name,
+    niveau,
+    (
+        SELECT COUNT(1)
+        FROM x x2
+        WHERE x2.parent = x1.hasc
+    ) AS kinderen,
+    (
+        SELECT COUNT(1)
+        FROM x x2
+        WHERE x2.blad = 1
+        START WITH x2.parent = x1.hasc
+        CONNECT BY PRIOR hasc = parent
+    ) AS bladelementen,
+    population,
+    area,
+    (
+        SELECT ROUND(SUM(population) / SUM(area), 1)
+        FROM x x2
+        START WITH x2.parent = x1.hasc
+        CONNECT BY PRIOR hasc = parent
+    ) AS dichtheid
+FROM x x1
+ORDER BY niveau, dichtheid DESC;
