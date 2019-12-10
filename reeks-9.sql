@@ -279,12 +279,22 @@ WITH x (name, hasc, ouders, "LEVEL", rootname, blad) AS (
     SELECT r2.name, r2.hasc, x.ouders || '/' || r2.name, "LEVEL" + 1, rootname,
            CASE WHEN (SELECT count(1) FROM regios r3 WHERE r3.PARENT = r2.HASC) >= 1 THEN 0 ELSE 1 END
     FROM regios r2
-    JOIN x ON x.hasc = r2.parent
+    LEFT JOIN x ON x.hasc = r2.parent
 )
 SELECT name, ouders, "LEVEL", rootname
 FROM x
 WHERE blad = 1
 ORDER BY "LEVEL", name;
+
+
+SELECT name, hasc, name AS ouders, 1 "LEVEL", name AS rootname, 0 AS blad
+    FROM regios r1
+    WHERE hasc = 'BE'
+        UNION ALL
+    SELECT r2.name, r2.hasc, x.ouders || '/' || r2.name, "LEVEL" + 1, rootname,
+           CASE WHEN (SELECT count(1) FROM regios r3 WHERE r3.PARENT = r2.HASC) >= 1 THEN 0 ELSE 1 END
+    FROM regios r2
+    LEFT JOIN x ON x.hasc = r2.parent
 
 /**
   12
@@ -324,64 +334,74 @@ order by level;
   14
  */
 WITH x AS (
-    SELECT hasc,
+    SELECT connect_by_root name land,
            population,
            elevation,
            prior elevation AS priorelevation
     FROM regios r1
     WHERE CONNECT_BY_ISLEAF = 1
-    START WITH hasc = 'EUR'
+    START WITH parent = 'EUR'
     CONNECT BY PRIOR hasc = parent
 )
-SELECT (SELECT name FROM regios WHERE hasc = SUBSTR(x.HASC, 0, 2)) AS name,
+SELECT land,
        SUM(POPULATION) AS population,
        COUNT(1),
        MAX(ELEVATION),
        MAX(priorelevation)
 FROM x
 WHERE population IS NOT NULL
-GROUP BY SUBSTR(x.HASC, 0, 2)
+GROUP BY land
 ORDER BY population DESC;
 
 /**
   15
  */
-WITH x (name, niveau, blad, population, area, parent, hasc) AS (
-    SELECT
-       name,
-       level - 1 AS niveau,
-       CONNECT_BY_ISLEAF blad,
-       population,
-       area,
-       parent,
-       hasc
-    FROM regios r1
-    START WITH hasc = 'BE'
-    CONNECT BY PRIOR hasc = parent
-    ORDER BY level
-)
-SELECT
-    name,
-    niveau,
-    (
-        SELECT COUNT(1)
-        FROM x x2
-        WHERE x2.parent = x1.hasc
-    ) AS kinderen,
-    (
-        SELECT COUNT(1)
-        FROM x x2
-        WHERE x2.blad = 1
-        START WITH x2.parent = x1.hasc
-        CONNECT BY PRIOR hasc = parent
-    ) AS bladelementen,
-    population,
-    area,
-    (
-        SELECT ROUND(SUM(population) / SUM(area), 1)
-        FROM x x2
-        START WITH x2.parent = x1.hasc
-        CONNECT BY PRIOR hasc = parent
-    ) AS dichtheid
-FROM x x1
-ORDER BY niveau, dichtheid DESC;
+with x as ( select name, hasc, parent,level-1 niveau, population, area, CONNECT_BY_ISLEAF blad
+            from Regios
+            start with hasc='BE'
+            connect by parent = prior hasc
+          )
+    ,y as ( select name, hasc, parent,prior niveau-1 niveau, prior hasc previous
+           ,CONNECT_BY_ROOT(population) population
+           ,CONNECT_BY_ROOT(area) area
+            from x
+            where level<>1
+            start with blad=1
+            connect by prior parent = hasc
+          )
+select   name, niveau
+        ,count(distinct previous) kinderen
+        ,count(1) bladelementen
+        ,sum(population) population,sum(area) area
+        ,cast(sum(population)/sum(area) as numeric(9,1)) dichtheid
+from     y
+group by name,hasc,niveau
+order by niveau,dichtheid desc
+
+-- ansi
+
+with x(name, hasc, parent,lvl, population, area)
+     as ( select name, hasc, parent,0 lvl, population, area
+            from Regios
+            where hasc='BE'
+            union all
+            select r.name,r.hasc,r.parent,lvl+1,r.population,r.area
+            from regios r join x on  r.parent = x.hasc
+          )
+  ,  y(name, hasc, parent,lvl,population, area,blad,rootpop,rootarea,priorhasc) as (
+         select x.name, x.hasc, x.parent,x.lvl, x.population, x.area ,1,x.population rootpop,x.area rootarea,x.hasc priorhasc
+         from x left join regios r on r.parent=x.hasc
+         where r.parent is null
+         union all
+         select x.name, x.hasc, x.parent,x.lvl, x.population, x.area ,0,y.rootpop,y.rootarea,y.hasc
+         from x join y on y.parent=x.hasc
+         )
+select   name, lvl
+       ,count(distinct priorhasc) kinderen
+        ,count(1) bladelementen
+        ,sum(rootpop) population,sum(rootarea) area
+        ,cast(sum(rootpop)/sum(rootarea) as numeric(9,1)) dichtheid
+from     y
+where blad<>1
+group by name,hasc,lvl
+order by lvl,dichtheid desc
